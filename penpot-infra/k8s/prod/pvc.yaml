@@ -1,0 +1,24 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp2-csi
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+parameters:
+  type: gp2
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: penpot-assets-pvc
+  namespace: prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2-csi
+  resources:
+    requests:
+      storage: 20Gi

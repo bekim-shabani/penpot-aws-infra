@@ -1,0 +1,57 @@
+# ============================================================
+# Deployment services — preprod
+# exporter + mailcatch
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: services
+  namespace: preprod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      pod: services
+  template:
+    metadata:
+      labels:
+        pod: services
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      containers:
+        - name: exporter
+          image: registry.gitlab.com/penpotproject/penpot/penpot-exporter:latest
+          env:
+            - name: PENPOT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: PENPOT_SECRET_KEY
+            - name: PENPOT_PUBLIC_URI
+              value: "http://penpot-frontend:8080"
+            - name: PENPOT_REDIS_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: penpot-config
+                  key: PENPOT_REDIS_URI
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+
+        - name: mailcatch
+          image: sj26/mailcatcher:latest
+          ports:
+            - containerPort: 1025
+            - containerPort: 1080
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"

@@ -1,0 +1,58 @@
+# ============================================================
+# Deployment services — prod
+# exporter uniquement
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: services
+  namespace: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      pod: services
+  template:
+    metadata:
+      labels:
+        pod: services
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  pod: app-core
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: exporter
+          image: registry.gitlab.com/penpotproject/penpot/penpot-exporter:latest
+          env:
+            - name: PENPOT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: PENPOT_SECRET_KEY
+            - name: PENPOT_PUBLIC_URI
+              value: "https://lacapsule-penpot.studio"
+            - name: PENPOT_REDIS_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: penpot-config
+                  key: PENPOT_REDIS_URI
+          volumeMounts:
+            - mountPath: /opt/data/assets
+              name: penpot-assets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+      volumes:
+        - name: penpot-assets
+          persistentVolumeClaim:
+            claimName: penpot-assets-pvc

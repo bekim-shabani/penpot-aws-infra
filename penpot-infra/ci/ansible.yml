@@ -1,0 +1,202 @@
+image: python:3.12-slim
+.geneate_inventory: &geneate_inventory
+  - export BASTION_PUBLIC_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=penpot-bastion" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].PublicIpAddress" --output text)
+  - export BASTION_PRIVATE_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=penpot-bastion" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].PrivateIpAddress" --output text)
+  - export PROMETHEUS_PRIVATE_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=penpot-prometheus" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].PrivateIpAddress" --output text)
+  - export GRAFANA_PRIVATE_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=penpot-grafana" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].PrivateIpAddress" --output text)
+  - echo $BASTION_PUBLIC_IP
+  - echo $PROMETHEUS_PRIVATE_IP
+  - echo $GRAFANA_PRIVATE_IP
+  - envsubst < penpot-infra/ansible/files/config.tpl > penpot-infra/ansible/files/config
+  - envsubst < penpot-infra/ansible/inventory.ini.tpl> penpot-infra/ansible/inventory.ini
+
+.install_kubectl: &install_kubectl
+  - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  - chmod +x kubectl
+  - mv kubectl /usr/local/bin/kubectl
+  - kubectl version --client
+  - aws --version
+
+.sshd_config_bastion: &sshd_config_bastion
+  - apt update -y
+  - apt-get install -y openssh-client gettext-base awscli
+  - pip install --no-input ansible
+  - mkdir -p ~/.ssh
+  - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
+  - *geneate_inventory
+  - chmod 600 ~/.ssh/id_rsa
+  - ssh-keyscan -p 20100 $BASTION_PUBLIC_IP >> ~/.ssh/known_hosts
+  - chmod 755 penpot-infra/ansible
+  - cd penpot-infra/ansible
+
+.sshd_config_prometheus: &sshd_config_prometheus
+  - apt update -y
+  - apt-get install -y openssh-client gettext-base awscli
+  - apt-get update && apt-get install -y curl
+  - pip install --no-input ansible
+  - ansible-galaxy collection install prometheus.prometheus
+  - mkdir -p ~/.ssh
+  - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
+  - *install_kubectl
+  - aws eks update-kubeconfig --name penpotproject --region eu-north-1
+  - POD_IPS=$(kubectl get pods -n monitoring -l app=node-exporter -o jsonpath='{.items[*].status.podIP}')
+  - POD_IPS_APP_PROD=$(kubectl get pods -n prod -o jsonpath='{.items[*].status.podIP}')
+  - POD_IPS_APP_PRPD=$(kubectl get pods -n preprod -o jsonpath='{.items[*].status.podIP}')
+  - POD_IP_KUBE_METRICS=$(kubectl get pods -n monitoring -l app=kube-state-metrics -o jsonpath='{.items[*].status.podIP}')
+  - export KUBE_STATE_METRICS=$(echo $POD_IP_KUBE_METRICS)
+  - export APP_CORE_PRPD=$(echo $POD_IPS_APP_PRPD | awk '{print $1}')
+  - export APP_CORE_PROD_1=$(echo $POD_IPS_APP_PROD | awk '{print $1}')
+  - export APP_CORE_PROD_2=$(echo $POD_IPS_APP_PROD | awk '{print $2}')
+  - export NODE_EXPORTER_IP_1=$(echo $POD_IPS | awk '{print $1}')
+  - export NODE_EXPORTER_IP_2=$(echo $POD_IPS | awk '{print $2}')
+  - export SMTP_PASSWORD=$(echo "$MDP_GOOGLE" | base64 -d)
+  - export SMTP_EMAIL="$GOOGLE_EMAIL"
+  - export ALERT_RECEIVERS=$ALERT_RECEIVERS
+  - echo $KUBE_STATE_METRICS
+  - echo $APP_CORE_PRPD
+  - echo $APP_CORE_PROD_1
+  - echo $APP_CORE_PROD_2
+  - echo $NODE_EXPORTER_IP_1
+  - echo $NODE_EXPORTER_IP_2
+  - *geneate_inventory
+  - chmod 600 ~/.ssh/id_rsa
+  - ssh-keyscan -p 20100 $BASTION_PUBLIC_IP >> ~/.ssh/known_hosts
+  - chmod 755 penpot-infra/ansible
+  - cd penpot-infra/ansible
+
+.sshd_config_grafana: &sshd_config_grafana
+  - apt update -y
+  - apt-get install -y openssh-client gettext-base awscli
+  - pip install --no-input ansible
+  - ansible-galaxy collection install grafana.grafana
+  - mkdir -p ~/.ssh
+  - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
+  - chmod 600 ~/.ssh/id_rsa
+  - *geneate_inventory
+  - ssh-keyscan -p 20100 $BASTION_PUBLIC_IP >> ~/.ssh/known_hosts
+  - chmod 755 penpot-infra/ansible
+  - cd penpot-infra/ansible
+
+.eks_kubectl_config: &eks_kubectl_config
+  - apt-get update && apt-get install -y curl gettext-base
+  - pip install --no-input ansible boto3 kubernetes awscli
+  - ansible-galaxy collection install kubernetes.core
+  - *install_kubectl
+  - *geneate_inventory
+  - cd penpot-infra/ansible
+
+ansible_test_ping_bastion:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *sshd_config_bastion
+    - ansible bastion -m ping
+  needs:
+    - job: ansible_deploy_bastion
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_deploy_bastion:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *sshd_config_bastion
+    - echo "$ANSIBLE_VAULT_PASSWORD" > /tmp/vault_pass.txt
+    - ansible-playbook playbooks/bastion.yml --vault-password-file /tmp/vault_pass.txt
+    - rm -f /tmp/vault_pass.txt
+  when: manual
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_deploy_prometheus:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *sshd_config_prometheus
+    - ansible-playbook playbooks/prometheus.yml
+    - ansible-playbook playbooks/deploy-cloudwatch-exporter.yml
+  needs:
+    - job: ansible_deploy_bastion
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_deploy_grafana:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *sshd_config_grafana
+    - echo "$ANSIBLE_VAULT_PASSWORD" > /tmp/vault_pass.txt
+    - ansible-playbook playbooks/grafana.yml --vault-password-file /tmp/vault_pass.txt
+  needs:
+    - job: ansible_deploy_prometheus
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_deploy_node_exporter:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *eks_kubectl_config
+    - ansible-playbook playbooks/deploy-node-exporter.yml
+  needs:
+    - job: ansible_deploy_bastion
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_deploy_K8S_metrics_states:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *eks_kubectl_config
+    - ansible-playbook playbooks/kube-states-metrics.yml
+  needs:
+    - job: ansible_deploy_bastion
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_set_ufw_rules:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - *sshd_config_bastion
+    - ansible-playbook playbooks/ufw.yml
+  needs:
+    - job: ansible_deploy_bastion
+    - job: ansible_deploy_prometheus
+    - job: ansible_deploy_grafana
+  only:
+    - main
+    - /^infra\/.*/
+
+ansible_create_backups:
+  stage: provisioning
+  tags:
+    - arno
+  script:
+    - apt-get update && apt-get install -y curl gettext-base
+    - pip install --no-input ansible boto3 kubernetes awscli
+    - *install_kubectl
+    - export RDS_PREPROD_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier penpotproject-preprod --query "DBInstances[0].Endpoint.Address" --output text --region eu-north-1)
+    - export RDS_PROD_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier penpotproject-prod --query "DBInstances[0].Endpoint.Address" --output text --region eu-north-1)
+    - aws eks update-kubeconfig --region eu-north-1 --name penpotproject
+    - export RDS_PASSWORD=$(kubectl get secret app-secrets -n prod -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d | tr -d '\n')
+    - *sshd_config_bastion
+    - ansible-playbook playbooks/backup.yml
+  needs:
+    - job: ansible_deploy_bastion
+  only:
+    - main
+    - /^infra\/.*/

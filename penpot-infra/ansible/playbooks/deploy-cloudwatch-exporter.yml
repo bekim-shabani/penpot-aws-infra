@@ -1,0 +1,830 @@
+---
+- name: Deploy CloudWatch Exporter for Prometheus
+  hosts: prometheus
+  become: yes
+  gather_facts: yes
+
+  vars:
+    cloudwatch_exporter_version: "0.15.5"
+    cloudwatch_exporter_port: 9106
+    aws_region: "eu-north-1"
+    alb_name: "loadbalancer/app/penpotproject-alb/83368a4bac213597"
+    rds_instance_id_prod: "penpotproject-prod"
+    rds_instance_id_preprod: "penpotproject-preprod"
+    redis_cluster_id: "penpotproject"
+
+  tasks:
+    - name: Install Java (required for CloudWatch Exporter)
+      ansible.builtin.apt:
+        name:
+          - default-jre-headless
+        state: present
+        update_cache: yes
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Java (RHEL/CentOS)
+      ansible.builtin.yum:
+        name:
+          - java-11-openjdk-headless
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"
+
+    - name: Create cloudwatch-exporter user
+      ansible.builtin.user:
+        name: cloudwatch-exporter
+        system: yes
+        shell: /bin/false
+        createhome: no
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: cloudwatch-exporter
+        group: cloudwatch-exporter
+        mode: '0755'
+      loop:
+        - /opt/cloudwatch-exporter
+        - /etc/cloudwatch-exporter
+        - /var/lib/cloudwatch-exporter
+
+    - name: Download CloudWatch Exporter
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/cloudwatch_exporter/releases/download/v{{ cloudwatch_exporter_version }}/cloudwatch_exporter-{{ cloudwatch_exporter_version }}-jar-with-dependencies.jar"
+        dest: "/opt/cloudwatch-exporter/cloudwatch_exporter.jar"
+        owner: cloudwatch-exporter
+        group: cloudwatch-exporter
+        mode: '0644'
+#service cloud watch
+    - name: Create CloudWatch Exporter configuration
+      ansible.builtin.copy:
+        content: |
+          ---
+          region: {{ aws_region }}
+          metrics:
+            # Nombre de requêtes HTTP
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: RequestCount
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Temps de réponse moyen
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: TargetResponseTime
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Codes HTTP 2xx (succès)
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_2XX_Count
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Codes HTTP 4xx (erreurs client)
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_4XX_Count
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Codes HTTP 5xx (erreurs serveur)
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_5XX_Count
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Connexions actives
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: ActiveConnectionCount
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Healthy targets
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HealthyHostCount
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Unhealthy targets
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: UnHealthyHostCount
+              aws_dimensions:
+                - LoadBalancer
+              aws_dimension_select:
+                LoadBalancer: ["{{ alb_name }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # ========== ALB Metrics by TargetGroup (Production) ==========
+
+            # Request Count - Production TargetGroups
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: RequestCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Target Response Time - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: TargetResponseTime
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+                - Maximum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 2xx Count - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_2XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 4xx Count - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_4XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 5xx Count - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_5XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Healthy Host Count - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HealthyHostCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Unhealthy Host Count - Production
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: UnHealthyHostCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-prod-penpotfr-867efdcba6/06df3126e86a4e70"
+                  - "targetgroup/k8s-prod-penpotfr-dc4cfa4cd8/9309032fcbf14446"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # ========== ALB Metrics by TargetGroup (Préproduction) ==========
+
+            # Request Count - Préproduction TargetGroups
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: RequestCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Target Response Time - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: TargetResponseTime
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+                - Maximum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 2xx Count - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_2XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 4xx Count - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_4XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # HTTP 5xx Count - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HTTPCode_Target_5XX_Count
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Healthy Host Count - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: HealthyHostCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Unhealthy Host Count - Préproduction
+            - aws_namespace: AWS/ApplicationELB
+              aws_metric_name: UnHealthyHostCount
+              aws_dimensions:
+                - TargetGroup
+                - LoadBalancer
+              aws_dimension_select:
+                TargetGroup:
+                  - "targetgroup/k8s-preprod-penpotfr-03e451ff98/7ca9bbef7190edf0"
+                  - "targetgroup/k8s-preprod-penpotfr-de83ae8ab6/35afd08f2816a340"
+                LoadBalancer:
+                  - "app/penpotproject-alb/83368a4bac213597"
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # ========== RDS PostgreSQL Metrics - PRODUCTION ==========
+
+            # CPU Utilization - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: CPUUtilization
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Database Connections - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: DatabaseConnections
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Freeable Memory - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: FreeableMemory
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Free Storage Space - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: FreeStorageSpace
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read Latency - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadLatency
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write Latency - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteLatency
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read IOPS - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadIOPS
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write IOPS - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteIOPS
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read Throughput - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadThroughput
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write Throughput - Prod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteThroughput
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_prod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # ========== RDS PostgreSQL Metrics - PREPROD ==========
+
+            # CPU Utilization - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: CPUUtilization
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Database Connections - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: DatabaseConnections
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Freeable Memory - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: FreeableMemory
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Free Storage Space - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: FreeStorageSpace
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read Latency - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadLatency
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write Latency - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteLatency
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read IOPS - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadIOPS
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write IOPS - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteIOPS
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Read Throughput - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: ReadThroughput
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Write Throughput - Preprod
+            - aws_namespace: AWS/RDS
+              aws_metric_name: WriteThroughput
+              aws_dimensions:
+                - DBInstanceIdentifier
+              aws_dimension_select:
+                DBInstanceIdentifier: ["{{ rds_instance_id_preprod }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # ========== ElastiCache Redis Metrics ==========
+
+            # CPU Utilization
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: CPUUtilization
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Engine CPU Utilization (Redis specific)
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: EngineCPUUtilization
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Database Memory Usage Percentage
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: DatabaseMemoryUsagePercentage
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Current Connections
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: CurrConnections
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+
+            # Evictions
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: Evictions
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Cache Hits
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: CacheHits
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Cache Misses
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: CacheMisses
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Network Bytes In
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: NetworkBytesIn
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Network Bytes Out
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: NetworkBytesOut
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Sum
+              period_seconds: 60
+              range_seconds: 300
+
+            # Replication Lag (for replica nodes)
+            - aws_namespace: AWS/ElastiCache
+              aws_metric_name: ReplicationLag
+              aws_dimensions:
+                - CacheClusterId
+              aws_dimension_select:
+                CacheClusterId: ["{{ redis_cluster_id }}"]
+              aws_statistics:
+                - Average
+              period_seconds: 60
+              range_seconds: 300
+        dest: /etc/cloudwatch-exporter/config.yml
+        owner: cloudwatch-exporter
+        group: cloudwatch-exporter
+        mode: '0644'
+      notify: restart cloudwatch-exporter
+
+    - name: Create systemd service file
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=CloudWatch Exporter
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=cloudwatch-exporter
+          Group=cloudwatch-exporter
+          ExecStart=/usr/bin/java -jar /opt/cloudwatch-exporter/cloudwatch_exporter.jar {{ cloudwatch_exporter_port }} /etc/cloudwatch-exporter/config.yml
+          Restart=on-failure
+          RestartSec=5
+
+          # Security hardening
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+          ReadWritePaths=/var/lib/cloudwatch-exporter
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/cloudwatch-exporter.service
+        mode: '0644'
+      notify: restart cloudwatch-exporter
+
+    - name: Enable and start CloudWatch Exporter
+      ansible.builtin.systemd:
+        name: cloudwatch-exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Wait for CloudWatch Exporter to be ready
+      ansible.builtin.wait_for:
+        port: "{{ cloudwatch_exporter_port }}"
+        delay: 5
+        timeout: 30
+
+    - name: Display CloudWatch Exporter status
+      ansible.builtin.debug:
+        msg: "CloudWatch Exporter is running on port {{ cloudwatch_exporter_port }}"
+
+  handlers:
+    - name: restart cloudwatch-exporter
+      ansible.builtin.systemd:
+        name: cloudwatch-exporter
+        state: restarted
+
+    - name: reload prometheus
+      ansible.builtin.systemd:
+        name: prometheus
+        state: reloaded

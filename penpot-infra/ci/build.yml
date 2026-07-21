@@ -1,0 +1,70 @@
+images_build_push:
+  stage: build
+  image: docker:27
+  tags:
+    - penpot
+  services:
+    - name: docker:27-dind
+      alias: docker
+      command: ["--tls=false"]
+  needs:
+    - job: test-unit
+      artifacts: true
+  before_script:
+    - export SOURCE_HASH=$(cat .source_hash)
+    - export CURRENT_HASH=$(find penpot-app -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
+    - apk add --no-cache git bash rsync
+    - chmod +x ./penpot-app/build.sh
+    - docker info
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  cache:
+    key: "compiled-$SOURCE_HASH"
+    paths:
+      - penpot-app/docker/images/bundle-frontend
+      - penpot-app/docker/images/bundle-backend
+      - penpot-app/docker/images/bundle-exporter
+      - penpot-app/docker/images/bundle-mcp
+      - penpot-app/docker/images/bundle-storybook
+    policy: pull
+  script:
+    - |
+      if [ "$SOURCE_HASH" = "$CURRENT_HASH" ]; then
+        echo "Hash identique — skip build, retag uniquement."
+        docker pull $REGISTRY/penpot-frontend:latest
+        docker pull $REGISTRY/penpot-backend:latest
+        docker pull $REGISTRY/penpot-exporter:latest
+        docker pull $REGISTRY/penpot-mcp:latest
+        docker pull $REGISTRY/penpot-storybook:latest
+        docker tag $REGISTRY/penpot-frontend:latest $REGISTRY/penpot-frontend:$CI_COMMIT_TAG
+        docker tag $REGISTRY/penpot-backend:latest $REGISTRY/penpot-backend:$CI_COMMIT_TAG
+        docker tag $REGISTRY/penpot-exporter:latest $REGISTRY/penpot-exporter:$CI_COMMIT_TAG
+        docker tag $REGISTRY/penpot-mcp:latest $REGISTRY/penpot-mcp:$CI_COMMIT_TAG
+        docker tag $REGISTRY/penpot-storybook:latest $REGISTRY/penpot-storybook:$CI_COMMIT_TAG
+      else
+        echo "Hash différent — build complet."
+        cd penpot-app/
+        ./build.sh build-docker-images
+        cd ..
+        docker tag penpot-frontend:latest $REGISTRY/penpot-frontend:$CI_COMMIT_TAG
+        docker tag penpot-frontend:latest $REGISTRY/penpot-frontend:latest
+        docker tag penpot-backend:latest $REGISTRY/penpot-backend:$CI_COMMIT_TAG
+        docker tag penpot-backend:latest $REGISTRY/penpot-backend:latest
+        docker tag penpot-exporter:latest $REGISTRY/penpot-exporter:$CI_COMMIT_TAG
+        docker tag penpot-exporter:latest $REGISTRY/penpot-exporter:latest
+        docker tag penpot-mcp:latest $REGISTRY/penpot-mcp:$CI_COMMIT_TAG
+        docker tag penpot-mcp:latest $REGISTRY/penpot-mcp:latest
+        docker tag penpot-storybook:latest $REGISTRY/penpot-storybook:$CI_COMMIT_TAG
+        docker tag penpot-storybook:latest $REGISTRY/penpot-storybook:latest
+      fi
+    - docker push $REGISTRY/penpot-frontend:$CI_COMMIT_TAG
+    - docker push $REGISTRY/penpot-frontend:latest
+    - docker push $REGISTRY/penpot-backend:$CI_COMMIT_TAG
+    - docker push $REGISTRY/penpot-backend:latest
+    - docker push $REGISTRY/penpot-exporter:$CI_COMMIT_TAG
+    - docker push $REGISTRY/penpot-exporter:latest
+    - docker push $REGISTRY/penpot-mcp:$CI_COMMIT_TAG
+    - docker push $REGISTRY/penpot-mcp:latest
+    - docker push $REGISTRY/penpot-storybook:$CI_COMMIT_TAG
+    - docker push $REGISTRY/penpot-storybook:latest
+  only:
+    - tags

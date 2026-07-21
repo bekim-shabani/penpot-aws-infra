@@ -1,0 +1,89 @@
+# ============================================================
+# Services Kubernetes — preprod
+# ============================================================
+
+# Frontend
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-frontend
+  namespace: preprod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - port: 9001
+      targetPort: 8080
+---
+# Backend — ClusterIP (interne via nginx frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-backend
+  namespace: preprod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - port: 6060
+      targetPort: 6060
+---
+# MCP — ClusterIP (interne via nginx frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-mcp
+  namespace: preprod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - name: http
+      port: 4401
+      targetPort: 4401
+    - name: ws
+      port: 4402
+      targetPort: 4402
+---
+# Storybook
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-storybook
+  namespace: preprod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - port: 6006
+      targetPort: 6006
+---
+# Exporter
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-exporter
+  namespace: preprod
+spec:
+  selector:
+    pod: services
+  ports:
+    - port: 6061
+      targetPort: 6061
+---
+# Mailcatch
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-mailcatch
+  namespace: preprod
+spec:
+  selector:
+    pod: services
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: 1025
+    - name: ui
+      port: 1080
+      targetPort: 1080

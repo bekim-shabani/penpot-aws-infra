@@ -1,0 +1,64 @@
+deploy:preprod:
+  stage: deploy
+  image: alpine/k8s:1.36.1
+  tags:
+    - penpot
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $EKS_CLUSTER_NAME
+  environment:
+    name: preprod
+    url: https://preprod.lacapsule-penpot.studio
+  script:
+    - kubectl apply -f penpot-infra/k8s/preprod/namespace.yaml
+    - kubectl apply -f penpot-infra/k8s/preprod/pvc.yaml
+    - kubectl apply -f penpot-infra/k8s/preprod/configMap.yaml
+    - kubectl apply -f penpot-infra/k8s/preprod/deployment-app-core.yaml
+    - kubectl apply -f penpot-infra/k8s/preprod/deployment-services.yaml
+    - kubectl apply -f penpot-infra/k8s/preprod/services.yaml
+    - kubectl set image deployment/app-core
+        frontend=$REGISTRY/penpot-frontend:$CI_COMMIT_TAG
+        backend=$REGISTRY/penpot-backend:$CI_COMMIT_TAG
+        mcp=$REGISTRY/penpot-mcp:$CI_COMMIT_TAG
+        storybook=$REGISTRY/penpot-storybook:$CI_COMMIT_TAG
+        --namespace=preprod
+    - kubectl set image deployment/services
+        exporter=$REGISTRY/penpot-exporter:$CI_COMMIT_TAG
+        --namespace=preprod
+    - kubectl rollout status deployment/app-core --namespace=preprod --timeout=20m
+    - kubectl rollout status deployment/services --namespace=preprod --timeout=20m
+  needs: [images_build_push]
+  only:
+    - /^rc-v\d+\.\d+\.\d+$/
+
+deploy:prod:
+  stage: deploy
+  image: alpine/k8s:1.29.2
+  tags:
+    - penpot
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name $EKS_CLUSTER_NAME
+  environment:
+    name: prod
+    url: https://lacapsule-penpot.studio
+  script:
+    - kubectl apply -f penpot-infra/k8s/prod/namespace.yaml
+    - kubectl apply -f penpot-infra/k8s/prod/pvc.yaml
+    - kubectl apply -f penpot-infra/k8s/prod/deployment-app-core.yaml
+    - kubectl apply -f penpot-infra/k8s/prod/deployment-services.yaml
+    - kubectl apply -f penpot-infra/k8s/prod/services.yaml
+    - kubectl set image deployment/app-core
+        frontend=$REGISTRY/penpot-frontend:$CI_COMMIT_TAG
+        backend=$REGISTRY/penpot-backend:$CI_COMMIT_TAG
+        mcp=$REGISTRY/penpot-mcp:$CI_COMMIT_TAG
+        --namespace=prod
+    - kubectl set image deployment/services
+        exporter=$REGISTRY/penpot-exporter:$CI_COMMIT_TAG
+        --namespace=prod
+    - kubectl rollout status deployment/app-core --namespace=prod --timeout=20m
+    - kubectl rollout status deployment/services --namespace=prod --timeout=20m
+  only:
+    - /^v\d+\.\d+\.\d+$/
+  needs: [images_build_push]
+  when: manual

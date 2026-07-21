@@ -1,0 +1,24 @@
+test-e2e:
+  stage: integration              # tard dans le pipeline : a besoin de l'appli DÉPLOYÉE (preprod)
+  tags:
+    - penpot 
+  # image officielle Cypress (Node + navigateurs préinstallés)
+  image: cypress/browsers:node-20.9.0-chrome-118.0.5993.88-1-ff-118.0.2-edge-118.0.2088.46-1
+  before_script:
+    - cd penpot-infra/tests/cypress
+    - npm init -y
+    - npm install cypress@15.17.0 --save-dev   # version figée
+    - sleep 30 # le temps que l'appli soit accessible
+  script:
+    # --browser electron : navigateur embarqué dans l'image, toujours présent (pas de dépendance système)
+    # baseUrl/email/password viennent des variables CI/CD (zéro secret en dur, bascule d'env sans toucher au code)
+    - npx cypress run --browser electron --env "baseUrl=$CYPRESS_BASE_URL,email=$PENPOT_TEST_EMAIL,password=$PENPOT_TEST_PASSWORD"
+  artifacts:
+    when: on_failure
+    paths:
+      - penpot-infra/tests/cypress/screenshots/
+      - penpot-infra/tests/cypress/videos/
+    expire_in: 1 week
+  needs: [deploy:preprod]
+  only:
+    - tags

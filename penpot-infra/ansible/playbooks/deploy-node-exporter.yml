@@ -1,0 +1,198 @@
+---
+- name: Deploy Node Exporter to EKS cluster
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    cluster_name: "penpotproject"
+    aws_region: "eu-north-1"
+    ns_monitoring: "monitoring"
+
+  tasks:
+    - name: Configure kubectl for EKS cluster
+      shell: |
+        aws eks update-kubeconfig --name {{ cluster_name }} --region {{ aws_region }}
+      environment:
+        AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+    - name: Create monitoring namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ ns_monitoring }}"
+            labels:
+              name: monitoring
+
+    - name: Create ServiceAccount for node-exporter
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: node-exporter
+            namespace: "{{ ns_monitoring }}"
+
+    - name: Create ClusterRole for node-exporter
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: node-exporter
+          rules:
+            - apiGroups: [""]
+              resources:
+                - nodes
+                - nodes/proxy
+                - services
+                - endpoints
+                - pods
+              verbs: ["get", "list", "watch"]
+            - apiGroups: [""]
+              resources:
+                - configmaps
+              verbs: ["get"]
+            - nonResourceURLs: ["/metrics"]
+              verbs: ["get"]
+
+    - name: Create ClusterRoleBinding for node-exporter
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: node-exporter
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: node-exporter
+          subjects:
+            - kind: ServiceAccount
+              name: node-exporter
+              namespace: "{{ ns_monitoring }}"
+
+    - name: Deploy node-exporter DaemonSet
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: node-exporter
+            namespace: "{{ ns_monitoring }}"
+            labels:
+              app: node-exporter
+          spec:
+            selector:
+              matchLabels:
+                app: node-exporter
+            updateStrategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxUnavailable: 1
+            template:
+              metadata:
+                labels:
+                  app: node-exporter
+              spec:
+                serviceAccountName: node-exporter
+                hostNetwork: true
+                hostPID: true
+                hostIPC: true
+                containers:
+                  - name: node-exporter
+                    image: prom/node-exporter:v1.8.0
+                    args:
+                      - '--path.sysfs=/host/sys'
+                      - '--path.rootfs=/host/root'
+                      - '--path.procfs=/host/proc'
+                      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)'
+                      - '--collector.netclass.ignored-devices=^(veth.*|docker.*|br-.*|lo)$'
+                      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$'
+                    ports:
+                      - containerPort: 9100
+                        hostPort: 9100
+                        name: metrics
+                        protocol: TCP
+                    resources:
+                      limits:
+                        cpu: 200m
+                        memory: 100Mi
+                      requests:
+                        cpu: 100m
+                        memory: 50Mi
+                    securityContext:
+                      privileged: true
+                      runAsUser: 0
+                    volumeMounts:
+                      - name: sys
+                        mountPath: /host/sys
+                        mountPropagation: HostToContainer
+                        readOnly: true
+                      - name: root
+                        mountPath: /host/root
+                        mountPropagation: HostToContainer
+                        readOnly: true
+                      - name: proc
+                        mountPath: /host/proc
+                        mountPropagation: HostToContainer
+                        readOnly: true
+                volumes:
+                  - name: sys
+                    hostPath:
+                      path: /sys
+                  - name: root
+                    hostPath:
+                      path: /
+                  - name: proc
+                    hostPath:
+                      path: /proc
+                tolerations:
+                  - effect: NoSchedule
+                    operator: Exists
+
+    - name: Create Service for node-exporter
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: node-exporter
+            namespace: "{{ ns_monitoring }}"
+            labels:
+              app: node-exporter
+            annotations:
+              prometheus.io/scrape: "true"
+              prometheus.io/port: "9100"
+          spec:
+            type: ClusterIP
+            clusterIP: None
+            selector:
+              app: node-exporter
+            ports:
+              - name: metrics
+                port: 9100
+                targetPort: 9100
+                protocol: TCP
+
+    - name: Wait for node-exporter pods to be ready
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ ns_monitoring }}"
+        label_selectors:
+          - app=node-exporter
+      register: node_exporter_pods
+      until: node_exporter_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length >= 2
+      retries: 10
+      delay: 10
+
+    - name: Display node-exporter deployment status
+      debug:
+        msg: "Node exporter deployed successfully! {{ node_exporter_pods.resources | length }} pods running."

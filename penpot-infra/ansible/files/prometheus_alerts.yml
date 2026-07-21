@@ -1,0 +1,436 @@
+groups:
+
+  # INFRASTRUCTURE - EKS NODES
+  
+  - name: eks_infrastructure
+    interval: 30s
+    rules:
+      - alert: EKSNodeCriticalCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle", job=~"EKS_Node.*"}[5m])) * 100) > 95
+        for: 3m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "CPU critique sur worker EKS {{ $labels.instance }}"
+          description: "Le CPU est à {{ $value | humanize }}% sur {{ $labels.instance }}"
+
+      - alert: EKSNodeHighCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle", job=~"EKS_Node.*"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "CPU élevé sur worker EKS {{ $labels.instance }}"
+          description: "Le CPU est à {{ $value | humanize }}% sur {{ $labels.instance }}"
+
+      - alert: EKSNodeCriticalMemory
+        expr: (1 - (node_memory_MemAvailable_bytes{job=~"EKS_Node.*"} / node_memory_MemTotal_bytes{job=~"EKS_Node.*"})) * 100 > 95
+        for: 3m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Mémoire critique sur worker EKS {{ $labels.instance }}"
+          description: "La mémoire est à {{ $value | humanize }}% sur {{ $labels.instance }}"
+
+      - alert: EKSNodeHighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes{job=~"EKS_Node.*"} / node_memory_MemTotal_bytes{job=~"EKS_Node.*"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Mémoire élevée sur worker EKS {{ $labels.instance }}"
+          description: "La mémoire est à {{ $value | humanize }}% sur {{ $labels.instance }}"
+
+ 
+  # KUBERNETES PODS
+  
+  - name: kubernetes_pods
+    interval: 30s
+    rules:
+      - alert: PodNotRunning
+        expr: kube_pod_status_phase{namespace=~"prod|preprod", phase!="Running"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: kubernetes
+        annotations:
+          summary: "Pod {{ $labels.pod }} non Running dans {{ $labels.namespace }}"
+          description: "Le pod est en phase {{ $labels.phase }}"
+
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total{namespace=~"prod|preprod"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: kubernetes
+        annotations:
+          summary: "Pod {{ $labels.pod }} en CrashLoop dans {{ $labels.namespace }}"
+          description: "Le pod redémarre en boucle"
+
+
+  # APPLICATION PENPOT
+
+  - name: penpot_application
+    interval: 30s
+    rules:
+      - alert: PenpotBackendDown
+        expr: up{job=~"APP_PROD.*|APP_PRPD", env=~"prod|production|preprod"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Backend Penpot {{ $labels.job }} est DOWN"
+          description: "L'instance {{ $labels.instance }} ne répond plus"
+
+      - alert: PenpotNoRPCRequests
+        expr: sum(rate(penpot_rpc_main_timing_count{env=~"prod|production|preprod"}[5m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Aucune requête RPC sur Penpot"
+          description: "Pas de requêtes RPC détectées depuis 10 minutes"
+
+      - alert: PenpotHighRPCRate
+        expr: sum(rate(penpot_rpc_main_timing_count{env=~"prod|production|preprod"}[5m])) > 100
+        for: 5m
+        labels:
+          severity: info
+          component: application
+        annotations:
+          summary: "Taux de requêtes RPC élevé sur Penpot"
+          description: "{{ $value | humanize }} req/s actuellement"
+
+      - alert: PenpotCriticalRPCLatency
+        expr: histogram_quantile(0.95, sum(rate(penpot_rpc_main_timing_bucket{env=~"prod|production|preprod"}[5m])) by (name, le)) > 5000
+        for: 3m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Latence RPC critique pour {{ $labels.name }}"
+          description: "P95 latency: {{ $value | humanize }}ms pour {{ $labels.name }}"
+
+      - alert: PenpotHighRPCLatency
+        expr: histogram_quantile(0.95, sum(rate(penpot_rpc_main_timing_bucket{env=~"prod|production|preprod"}[5m])) by (name, le)) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Latence RPC élevée pour {{ $labels.name }}"
+          description: "P95 latency: {{ $value | humanize }}ms pour {{ $labels.name }}"
+
+      - alert: PenpotCriticalJVMHeap
+        expr: (jvm_memory_bytes_used{area="heap", env=~"prod|production|preprod"} / jvm_memory_bytes_max{area="heap", env=~"prod|production|preprod"}) * 100 > 95
+        for: 3m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Heap JVM critique sur {{ $labels.job }}"
+          description: "Heap à {{ $value | humanize }}% sur {{ $labels.job }} - risque d'OutOfMemory"
+
+      - alert: PenpotHighJVMHeap
+        expr: (jvm_memory_bytes_used{area="heap", env=~"prod|production|preprod"} / jvm_memory_bytes_max{area="heap", env=~"prod|production|preprod"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Heap JVM élevé sur {{ $labels.job }}"
+          description: "Heap à {{ $value | humanize }}% sur {{ $labels.job }} - {{ $labels.env }}"
+
+
+  # LOAD BALANCER (ALB)
+
+  - name: alb_loadbalancer
+    interval: 30s
+    rules:
+      - alert: ALBNoHealthyTargets
+        expr: sum(aws_applicationelb_healthy_host_count_average{target_group=~".*k8s-prod-penpotfr.*"}) == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: loadbalancer
+        annotations:
+          summary: "AUCUN target healthy sur ALB Production"
+          description: "Service potentiellement indisponible"
+
+      - alert: ALBUnhealthyTargets
+        expr: sum(aws_applicationelb_un_healthy_host_count_average{target_group=~".*k8s-prod-penpotfr.*"}) > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: loadbalancer
+        annotations:
+          summary: "Targets ALB Unhealthy en Production"
+          description: "{{ $value }} target(s) unhealthy détecté(s)"
+
+      - alert: ALBLowHealthyTargets
+        expr: sum(aws_applicationelb_healthy_host_count_average{target_group=~".*k8s-prod-penpotfr.*"}) < 2
+        for: 3m
+        labels:
+          severity: warning
+          component: loadbalancer
+        annotations:
+          summary: "Peu de targets healthy sur ALB (< 2)"
+          description: "Seulement {{ $value }} target(s) healthy"
+
+      - alert: ALBCriticalResponseTime
+        expr: avg(aws_applicationelb_target_response_time_average{target_group=~".*k8s-prod-penpotfr.*"}) > 5
+        for: 3m
+        labels:
+          severity: critical
+          component: loadbalancer
+        annotations:
+          summary: "Temps de réponse ALB critique"
+          description: "Temps de réponse moyen: {{ $value | humanize }}s"
+
+      - alert: ALBHighResponseTime
+        expr: avg(aws_applicationelb_target_response_time_average{target_group=~".*k8s-prod-penpotfr.*"}) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: loadbalancer
+        annotations:
+          summary: "Temps de réponse ALB élevé"
+          description: "Temps de réponse moyen: {{ $value | humanize }}s"
+
+      - alert: ALBNoRequests
+        expr: sum(rate(aws_applicationelb_request_count_sum{target_group=~".*k8s-prod-penpotfr.*"}[5m])) * 60 == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: loadbalancer
+        annotations:
+          summary: "Aucune requête sur ALB Production"
+          description: "L'ALB ne reçoit aucune requête depuis 5 minutes"
+
+ 
+  # BASE DE DONNÉES RDS
+
+  - name: rds_database
+    interval: 60s
+    rules:
+      - alert: RDSCriticalCPU
+        expr: aws_rds_cpuutilization_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "CPU critique sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "CPU à {{ $value | humanize }}% - risque de dégradation"
+
+      - alert: RDSHighCPU
+        expr: aws_rds_cpuutilization_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "CPU élevé sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "CPU à {{ $value | humanize }}%"
+
+      - alert: RDSCriticalMemory
+        expr: (1 - (aws_rds_freeable_memory_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} / 1073741824)) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Mémoire critique sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "Mémoire utilisée: {{ $value | humanize }}%"
+
+      - alert: RDSHighMemory
+        expr: (1 - (aws_rds_freeable_memory_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} / 1073741824)) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Mémoire élevée sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "Mémoire utilisée: {{ $value | humanize }}%"
+
+      - alert: RDSCriticalStorage
+        expr: (aws_rds_free_storage_space_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} / 1024 / 1024 / 1024) < 1
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Espace disque critique sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "Seulement {{ $value | humanize }} GB disponibles - action immédiate requise"
+
+      - alert: RDSLowStorage
+        expr: (aws_rds_free_storage_space_average{dbinstance_identifier=~"penpotproject-(prod|preprod)"} / 1024 / 1024 / 1024) < 3
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Espace disque faible sur RDS {{ $labels.dbinstance_identifier }}"
+          description: "Seulement {{ $value | humanize }} GB disponibles"
+
+      - alert: RDSHighConnections
+        expr: aws_rds_database_connections_average{dbinstance_identifier="penpotproject-prod"} > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Nombre de connexions élevé sur RDS Production"
+          description: "{{ $value }} connexions actives"
+
+      - alert: RDSNoConnections
+        expr: aws_rds_database_connections_average{dbinstance_identifier="penpotproject-prod"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Aucune connexion sur RDS Production"
+          description: "Base de données potentiellement inaccessible"
+
+      - alert: RDSCriticalLatency
+        expr: (aws_rds_read_latency_average{dbinstance_identifier="penpotproject-prod"} * 1000 > 100) or (aws_rds_write_latency_average{dbinstance_identifier="penpotproject-prod"} * 1000 > 100)
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Latence critique sur RDS Production"
+          description: "Latence dépassant 100ms"
+
+      - alert: RDSHighReadLatency
+        expr: aws_rds_read_latency_average{dbinstance_identifier="penpotproject-prod"} * 1000 > 20
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Latence READ élevée sur RDS Production"
+          description: "Latence: {{ $value | humanize }}ms"
+
+      - alert: RDSHighWriteLatency
+        expr: aws_rds_write_latency_average{dbinstance_identifier="penpotproject-prod"} * 1000 > 20
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Latence WRITE élevée sur RDS Production"
+          description: "Latence: {{ $value | humanize }}ms"
+
+
+  # CACHE REDIS (ElastiCache)
+
+  - name: redis_cache
+    interval: 60s
+    rules:
+      - alert: RedisCriticalCPU
+        expr: aws_elasticache_engine_cpuutilization_average{cache_cluster_id="penpotproject"} > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "CPU Redis critique"
+          description: "CPU Redis à {{ $value | humanize }}%"
+
+      - alert: RedisHighCPU
+        expr: aws_elasticache_engine_cpuutilization_average{cache_cluster_id="penpotproject"} > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "CPU Redis élevé"
+          description: "CPU Redis à {{ $value | humanize }}%"
+
+      - alert: RedisCriticalMemory
+        expr: aws_elasticache_database_memory_usage_percentage_average{cache_cluster_id="penpotproject"} > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Mémoire Redis critique"
+          description: "Mémoire utilisée: {{ $value | humanize }}% - risque d'evictions massives"
+
+      - alert: RedisHighMemory
+        expr: aws_elasticache_database_memory_usage_percentage_average{cache_cluster_id="penpotproject"} > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Mémoire Redis élevée"
+          description: "Mémoire utilisée: {{ $value | humanize }}%"
+
+      - alert: RedisCriticalHitRate
+        expr: (rate(aws_elasticache_cache_hits_sum{cache_cluster_id="penpotproject"}[5m]) / (rate(aws_elasticache_cache_hits_sum{cache_cluster_id="penpotproject"}[5m]) + rate(aws_elasticache_cache_misses_sum{cache_cluster_id="penpotproject"}[5m]))) * 100 < 50
+        for: 10m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Taux de hit cache Redis très faible"
+          description: "Hit rate: {{ $value | humanize }}% (< 50%) - cache inefficace"
+
+      - alert: RedisLowHitRate
+        expr: (rate(aws_elasticache_cache_hits_sum{cache_cluster_id="penpotproject"}[5m]) / (rate(aws_elasticache_cache_hits_sum{cache_cluster_id="penpotproject"}[5m]) + rate(aws_elasticache_cache_misses_sum{cache_cluster_id="penpotproject"}[5m]))) * 100 < 80
+        for: 15m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Taux de hit cache Redis faible"
+          description: "Hit rate: {{ $value | humanize }}% (< 80%)"
+
+      - alert: RedisHighEvictions
+        expr: rate(aws_elasticache_evictions_sum{cache_cluster_id="penpotproject"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Evictions massives sur Redis"
+          description: "{{ $value | humanize }} evictions/sec - augmenter la capacité mémoire"
+
+      - alert: RedisEvictionsDetected
+        expr: rate(aws_elasticache_evictions_sum{cache_cluster_id="penpotproject"}[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Evictions détectées sur Redis"
+          description: "{{ $value | humanize }} evictions/sec - mémoire insuffisante"
+
+      - alert: RedisHighConnections
+        expr: aws_elasticache_curr_connections_average{cache_cluster_id="penpotproject"} > 50
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Nombre de connexions Redis élevé"
+          description: "{{ $value }} connexions actives"
+
+      - alert: RedisNoConnections
+        expr: aws_elasticache_curr_connections_average{cache_cluster_id="penpotproject"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Aucune connexion Redis"
+          description: "Redis potentiellement inaccessible"

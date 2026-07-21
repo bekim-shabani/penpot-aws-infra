@@ -1,0 +1,25 @@
+---
+- name: Deploy Prometheus Stack
+  hosts: prometheus
+  become: yes
+  tasks:
+    - name: Ensure Prometheus rules directory exists
+      file:
+        path: /etc/prometheus/rules
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+
+    - name: Copy custom alert rules
+      copy:
+        content: "{{ lookup('file', playbook_dir + '/../files/prometheus_alerts.yml') }}"
+        dest: /etc/prometheus/rules/prometheus_alerts.yml
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+
+  roles:
+    - prometheus.prometheus.node_exporter
+    - prometheus.prometheus.prometheus
+    - prometheus.prometheus.alertmanager

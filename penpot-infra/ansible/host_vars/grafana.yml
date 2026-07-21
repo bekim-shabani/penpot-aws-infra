@@ -1,0 +1,37 @@
+---
+# Version épinglée : déploiement reproductible (évite qu'une montée de version
+# amont change le comportement d'un run à l'autre).
+grafana_version: 11.6.0
+grafana_manage_repo: true
+
+# Configuration Grafana
+grafana_ini:
+  instance_name: "GraphanaPenpot"
+
+  paths:
+    logs: "/var/log/grafana"
+    data: "/var/lib/grafana"
+
+  server:
+    http_addr: "0.0.0.0"
+    http_port: 3000
+    protocol: http
+    domain: "grafana.lacapsule-penpot.studio"
+    root_url: "https://grafana.lacapsule-penpot.studio"
+
+  security:
+    admin_user: admin
+    admin_password: !vault |
+                      $ANSIBLE_VAULT;1.1;AES256
+                      65363264383131643931313435643066306339633261396364306565613366613031306563636534
+                      3230613732666434396566663864306537333564306264330a323839383930343862656235643562
+                      33343164383737633931353833306362646436643233666437366630653136643461303532623132
+                      6638663836393033640a356462616363373363396261323764356434336465316565326332373338
+                      3938
+
+grafana_datasources:
+  - name: "Prometheus"
+    type: "prometheus"
+    access: "proxy"
+    url: "http://{{ lookup('env', 'PROMETHEUS_PRIVATE_IP') }}:9090"
+    isDefault: true

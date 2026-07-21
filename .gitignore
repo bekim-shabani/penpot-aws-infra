@@ -1,0 +1,48 @@
+# ── Terraform ────────────────────────────────────────────────
+# L'état contient les secrets EN CLAIR : ne jamais le versionner.
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ── Ansible ──────────────────────────────────────────────────
+# Générés à l'exécution depuis les templates (.tpl) : contiennent des IP réelles.
+ansible/inventory.ini
+ansible/files/config
+*.retry
+
+# ── Secrets & identifiants ───────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+*_vault_pass*
+
+# ── Dépendances & artefacts ──────────────────────────────────
+node_modules/
+__pycache__/
+*.pyc
+tests/**/screenshots/
+tests/**/videos/
+
+# ── Système & éditeurs ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

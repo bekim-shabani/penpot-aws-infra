@@ -1,0 +1,142 @@
+# Version
+prometheus_version: "3.12.0"
+
+# Network
+prometheus_web_listen_address: "0.0.0.0:9090"
+
+
+# Storage
+prometheus_storage_retention: "30d"
+prometheus_storage_retention_size: "0"
+prometheus_db_dir: "/var/lib/prometheus"
+prometheus_binary_install_dir: /usr/local/bin
+
+# Config dirs
+prometheus_config_dir: "/etc/prometheus"
+
+
+
+# Scrape configs
+prometheus_scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+        labels:
+          app: 'prometheus'
+          env: 'production'
+  - job_name: 'EKS_Node_1'
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'NODE_EXPORTER_IP_1') }}:9100"
+        labels:
+          app: 'penpot_prod'
+          env: 'production'
+  - job_name: 'EKS_Node_2'
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'NODE_EXPORTER_IP_2') }}:9100"
+        labels:
+          app: 'penpot_prod'
+          env: 'prod'
+  - job_name: 'APP_PROD_1'
+    fallback_scrape_protocol: PrometheusText0.0.4
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'APP_CORE_PROD_1') }}:6060"
+        labels:
+          app: 'penpot_prod'
+          env: 'prod'
+  - job_name: 'APP_PROD_2'
+    fallback_scrape_protocol: PrometheusText0.0.4
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'APP_CORE_PROD_2') }}:6060"
+        labels:
+          app: 'penpot_prod'
+          env: 'production'
+  - job_name: 'APP_PRPD'
+    fallback_scrape_protocol: PrometheusText0.0.4
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'APP_CORE_PRPD') }}:6060"
+        labels:
+          app: 'penpot_preprod'
+          env: 'preprod'
+  - job_name: 'kube_states_metrics'
+    static_configs:
+      - targets:
+          - "{{ lookup('env', 'KUBE_STATE_METRICS') }}:8080"
+        labels:
+          app: 'penpot_prod'
+          env: 'production'
+  - job_name: 'node_exporter_prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9100'
+        labels:
+          app: 'node_exporter'
+          env: 'production'
+  - job_name: 'cloudwatch_exporter'
+    static_configs:
+      - targets:
+          - 'localhost:9106'
+        labels:
+          app: 'cloud_watch'
+          env: 'production'
+
+# Alert
+prometheus_alertmanager_config:
+  - static_configs:
+      - targets:
+          - localhost:9093
+
+# Global config
+prometheus_global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+# Alert rules files (charged by Prometheus)
+prometheus_alert_rules_files:
+  - rules/prometheus_alerts.yml
+
+
+# AlertManager Configuration
+
+
+# Version
+alertmanager_version: "0.27.0"
+
+# Network
+alertmanager_web_listen_address: "0.0.0.0:9093"
+alertmanager_cluster_listen_address: "0.0.0.0:9094"
+
+# Storage
+alertmanager_config_dir: "/etc/alertmanager"
+alertmanager_db_dir: "/var/lib/alertmanager"
+
+# Receivers configuration i
+alertmanager_receivers:
+  - name: email
+    email_configs:
+      - to: "{{ lookup('env', 'ALERT_RECEIVERS') }}"
+        from: "{{ lookup('env', 'SMTP_EMAIL') }}"
+        smarthost: "smtp.gmail.com:587"
+        auth_username: "{{ lookup('env', 'SMTP_EMAIL') }}"
+        auth_password: "{{ lookup('env', 'SMTP_PASSWORD') }}"
+        require_tls: true
+        send_resolved: true
+        headers:
+          Subject: '[ALERT Penpot] {% raw %}{{ .GroupLabels.alertname }}{% endraw %} - {% raw %}{{ .Status | toUpper }}{% endraw %}'
+
+# Routing conf
+alertmanager_route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  receiver: email
+
+# Inhibition rules
+alertmanager_inhibit_rules: []

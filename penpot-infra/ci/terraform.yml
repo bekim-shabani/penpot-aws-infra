@@ -1,0 +1,94 @@
+## ============================================================
+# TEMPLATE BASE
+# ============================================================
+
+.terraform_base: &terraform_base
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [""]
+  tags:
+    - penpot
+  before_script:
+    - apk add --no-cache aws-cli jq
+    - cd $TF_ROOT
+
+.tf_init: &tf_init
+  - terraform init
+    -backend-config="address=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/terraform/state/penpot-state"
+    -backend-config="lock_address=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/terraform/state/penpot-state/lock"
+    -backend-config="unlock_address=https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/terraform/state/penpot-state/lock"
+    -backend-config="username=DeisArno"
+    -backend-config="password=$GITLAB_ACCESS_TOKEN"
+    -backend-config="lock_method=POST"
+    -backend-config="unlock_method=DELETE"
+    -backend-config="retry_wait_min=5"
+
+# ============================================================
+# STAGE 1 — PLAN (auto sur push)
+# ============================================================
+
+terraform:plan:
+  <<: *terraform_base
+  stage: plan
+  script:
+    - *tf_init
+    - terraform validate
+    - terraform plan -out=tfplan -input=false
+  artifacts:
+    paths:
+      - $TF_ROOT/tfplan
+    expire_in: 1 day
+  cache:
+    key: terraform-$CI_COMMIT_REF_SLUG
+    paths:
+      - $TF_ROOT/.terraform/
+    policy: pull-push
+  only:
+    - main
+    - /^infra\/.*/
+
+# ============================================================
+# STAGE 2 — APPLY (manuel)
+# ============================================================
+
+terraform:apply:
+  <<: *terraform_base
+  stage: apply
+  script:
+    - *tf_init
+    - terraform apply -input=false tfplan
+  cache:
+    key: terraform-$CI_COMMIT_REF_SLUG
+    paths:
+      - $TF_ROOT/.terraform/
+    policy: pull
+  needs:
+    - job: terraform:plan
+      artifacts: true
+  when: manual
+  environment:
+    name: infrastructure
+    url: https://eu-north-1.console.aws.amazon.com/eks
+  only:
+    - main
+    - /^infra\/.*/
+
+# ============================================================
+# STAGE 3 — DESTROY (protégé par CONFIRM_DESTROY=yes)
+# ============================================================
+
+terraform:destroy:
+  <<: *terraform_base
+  stage: destroy
+  script:
+    - *tf_init
+    - terraform destroy -auto-approve -input=false -parallelism=5
+  cache:
+    key: terraform-$CI_COMMIT_REF_SLUG
+    paths:
+      - $TF_ROOT/.terraform/
+    policy: pull
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^infra\//'
+      when: manual
+  needs: []

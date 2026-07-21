@@ -1,0 +1,131 @@
+# ============================================================
+# Deployment app-core — preprod
+# frontend + backend + mcp + storybook
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-core
+  namespace: preprod
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      pod: app-core
+  template:
+    metadata:
+      labels:
+        pod: app-core
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      volumes:
+        - name: penpot-assets
+          persistentVolumeClaim:
+            claimName: penpot-assets-pvc
+        - name: nginx-storybook-conf
+          configMap:
+            name: nginx-storybook-conf
+      containers:
+
+        # --- Frontend (port 8080) ---
+        - name: frontend
+          image: registry.gitlab.com/penpotproject/penpot/penpot-frontend:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: penpot-config
+          volumeMounts:
+            - name: penpot-assets
+              mountPath: /opt/data/assets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+
+        # --- Backend (port 6060) ---
+        - name: backend
+          image: registry.gitlab.com/penpotproject/penpot/penpot-backend:latest
+          envFrom:
+            - configMapRef:
+                name: penpot-config
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms256m -Xmx512m"
+            - name: PENPOT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PENPOT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: PENPOT_SECRET_KEY
+          volumeMounts:
+            - name: penpot-assets
+              mountPath: /opt/data/assets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"
+          readinessProbe:
+            httpGet:
+              path: /api/rpc/command/get-profile
+              port: 6060
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 10
+            timeoutSeconds: 5
+
+        # --- MCP (ports 4401 + 4402) ---
+        - name: mcp
+          image: registry.gitlab.com/penpotproject/penpot/penpot-mcp:latest
+          ports:
+            - containerPort: 4401
+              name: http
+            - containerPort: 4402
+              name: ws
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+        # --- Storybook (port 6006) ---
+        - name: storybook
+          image: registry.gitlab.com/penpotproject/penpot/penpot-storybook:latest
+          ports:
+            - containerPort: 6006
+          volumeMounts:
+            - name: nginx-storybook-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"

@@ -1,0 +1,41 @@
+compile:
+  stage: compile
+  image: docker:27
+  tags:
+    - penpot
+  services:
+    - name: docker:27-dind
+      alias: docker
+      command: ["--tls=false"]
+  before_script:
+    - export SOURCE_HASH=$(find penpot-app -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
+    - echo $SOURCE_HASH > .source_hash
+    - apk add --no-cache git bash rsync
+    - chmod +x ./penpot-app/build.sh
+  script:
+    # Si les bundles sont déjà dans le cache → on skip
+    - |
+      if [ -f "$CI_PROJECT_DIR/penpot-app/docker/images/bundle-frontend/index.html" ] && \
+        [ -f "$CI_PROJECT_DIR/penpot-app/docker/images/bundle-backend/run.sh" ] && \
+        [ -f "$CI_PROJECT_DIR/penpot-app/docker/images/bundle-exporter/package.json" ] && \
+        [ -f "$CI_PROJECT_DIR/penpot-app/docker/images/bundle-mcp/package.json" ] && \
+        [ -f "$CI_PROJECT_DIR/penpot-app/docker/images/bundle-storybook/index.html" ]; then
+        echo "Bundles trouvés dans le cache, compilation skippée."
+        exit 0
+      fi
+    - cd penpot-app/
+    - ./build.sh build-bundles
+  cache:
+    key: "compiled-$SOURCE_HASH"
+    paths:
+      - penpot-app/docker/images/bundle-frontend
+      - penpot-app/docker/images/bundle-backend
+      - penpot-app/docker/images/bundle-exporter 
+      - penpot-app/docker/images/bundle-mcp
+      - penpot-app/docker/images/bundle-storybook
+    policy: pull-push
+  artifacts:
+    paths:
+      - .source_hash
+  only:
+    - tags

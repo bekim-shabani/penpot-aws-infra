@@ -1,0 +1,59 @@
+# ============================================================
+# Services Kubernetes — prod
+# ============================================================
+
+# Frontend 
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-frontend
+  namespace: prod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - port: 9001
+      targetPort: 8080
+---
+# Backend — ClusterIP (interne via nginx frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-backend
+  namespace: prod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - port: 6060
+      targetPort: 6060
+---
+# MCP — ClusterIP (interne via nginx frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-mcp
+  namespace: prod
+spec:
+  selector:
+    pod: app-core
+  ports:
+    - name: http
+      port: 4401
+      targetPort: 4401
+    - name: ws
+      port: 4402
+      targetPort: 4402
+---
+# Exporter — ClusterIP (interne via nginx frontend)
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-exporter
+  namespace: prod
+spec:
+  selector:
+    pod: services
+  ports:
+    - port: 6061
+      targetPort: 6061

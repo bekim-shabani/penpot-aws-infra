@@ -1,0 +1,109 @@
+#################################################################################################################
+# Les security groups AWS constituent le premier niveau de filtrage réseau.
+# Une couche supplémentaire de pare-feu OS (ufw) est configurée sur les instances bastion,
+# Prometheus et Grafana pour respecter le principe de défense en profondeur.
+# Les nodes EKS sont exclus de cette configuration pour ne pas interférer avec kube-proxy et le CNI aws-vpc-cni.
+#################################################################################################################
+
+- name: Firewall UFW
+  hosts: public
+  become: yes
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Reset ufw
+      ufw:
+        state: reset
+
+    - name: Autoriser SSH (port 20100)
+      ufw:
+        rule: allow
+        port: 20100
+        proto: tcp
+
+    - name: Bloquer toutes les entrées
+      ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Autoriser les sorties
+      ufw:
+        direction: outgoing
+        policy: allow
+
+    #Tant qu'UFW n'est pas activé, les commandes ufw allow/limit/deny ne sont pas encore actives
+    - name: Activer UFW avec une politique stricte
+      ansible.builtin.command: ufw --force enable
+
+    #Vérifier les règle
+    - name: Vérifier les règles bastion
+      shell: ufw status numbered
+      register: ufw_status
+
+    - name: Afficher les règles
+      debug:
+        var: ufw_status.stdout_lines
+
+- name: Firewall UFW (Prometheus, Grafana)
+  hosts: private
+  become: yes
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Autoriser SSH depuis Bastion uniquement
+      ufw:
+        rule: allow
+        port: 22
+        proto: tcp
+        src: "{{ BASTION_PRIVATE_IP }}"
+
+    - name: Autoriser Prometheus
+      ufw:
+        rule: allow
+        port: 9090
+        proto: tcp
+      when: inventory_hostname == 'prometheus'
+
+    - name: Autoriser Grafana
+      ufw:
+        rule: allow
+        port: 3000
+        proto: tcp
+      when: inventory_hostname == 'grafana'
+
+    - name: Bloquer toutes les entrées
+      ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Autoriser toutes les sorties
+      ufw:
+        direction: outgoing
+        policy: allow
+
+    #Tant qu'UFW n'est pas activé, les commandes ufw allow/limit/deny ne sont pas encore actives
+    - name: Activer UFW avec une politique stricte
+      ansible.builtin.command: ufw --force enable
+
+    #Vérifier les règle
+    - name: Vérifier les règles
+      shell: ufw status numbered
+      register: ufw_status
+
+    - name: Afficher les règles
+      debug:
+        var: ufw_status.stdout_lines

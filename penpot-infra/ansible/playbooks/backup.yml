@@ -1,0 +1,68 @@
+- name: Backup RDS
+  hosts: public
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Installer client pg et cron
+      ansible.builtin.apt:
+        name:
+          - postgresql-client
+          - cron
+        state: present
+
+    - name: Démarrer et activer cron
+      ansible.builtin.service:
+        name: cron
+        state: started
+        enabled: yes
+
+    - name: Définir SHELL pour cron admin
+      ansible.builtin.cron:
+        name: SHELL
+        env: yes
+        job: /bin/bash
+        user: admin
+
+    - name: Définir PATH pour cron admin
+      ansible.builtin.cron:
+        name: PATH
+        env: yes
+        job: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        user: admin
+
+    - name: Copier le script de backup
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/backup.sh"
+        dest: /home/admin/backup_rds.sh
+        mode: "0750"
+        owner: admin
+        group: admin
+
+    - name: Créer le dossier de backups
+      ansible.builtin.file:
+        path: /home/admin/backups
+        state: directory
+        owner: admin
+        group: admin
+        mode: "0750"
+
+    - name: Configurer le cron de backup en preprod
+      ansible.builtin.cron:
+        name: "RDS backup preprod quotidien"
+        minute: "0"
+        hour: "2"
+        user: admin
+        job: "/bin/bash /home/admin/backup_rds.sh {{ RDS_PREPROD_ENDPOINT }} {{ RDS_PASSWORD | quote }} preprod >> /home/admin/backups/backup-preprod.log 2>&1"
+
+    - name: Configurer le cron de backup en prod
+      ansible.builtin.cron:
+        name: "RDS backup prod quotidien"
+        minute: "0"
+        hour: "2"
+        user: admin
+        job: "/bin/bash /home/admin/backup_rds.sh {{ RDS_PROD_ENDPOINT }} {{ RDS_PASSWORD | quote }} prod >> /home/admin/backups/backup-prod.log 2>&1"
