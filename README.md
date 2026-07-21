@@ -6,7 +6,7 @@ Projet de fin de formation **Administrateur système DevOps** (TP-01414, La Caps
 
 ![Architecture AWS](docs/screenshots/01-architecture-aws.png)
 
-> **L'intégralité de cette architecture est provisionnée par Terraform** — VPC, sous-réseaux, tables de routage, cluster EKS, bases RDS, cache Redis, ALB, rôles IAM, buckets S3, instances EC2. Rien n'est créé à la main dans la console AWS.
+> **Tout ce qui apparaît sur ce schéma est provisionné par Terraform** — VPC, sous-réseaux, cluster EKS, bases RDS, cache Redis, ALB, bucket S3, instances EC2 — ainsi que ce qui ne s'y voit pas : tables de routage, security groups et rôles IAM. Rien n'est créé à la main dans la console AWS.
 
 ---
 
@@ -162,6 +162,8 @@ Le stage `compile` calcule un **hash SHA-256** de l'ensemble du code source. Si 
 
 ![Pipeline applicatif](docs/screenshots/03-pipeline-applicatif.png)
 
+*Le pipeline du tag `rc-v1.0.4`, au vert en **12 min 53**. Les cinq stages applicatifs sont à gauche ; la colonne `ansible` à droite regroupe les jobs de configuration, manuels, déclenchés dans le même pipeline — d'où le total affiché en haut.*
+
 ## Un déploiement qui refuse d'être à moitié appliqué
 
 `kubectl set image` bascule chaque conteneur sur l'image du tag, puis **`kubectl rollout status --timeout=20m`** vérifie que les pods deviennent sains. **S'ils ne le deviennent pas, le job échoue** — pas de mise en production partielle.
@@ -207,6 +209,8 @@ Prometheus, Grafana et Alertmanager tournent sur des **EC2, en dehors du cluster
 Une règle à part : le **Watchdog**, volontairement **toujours active**. Tant qu'on reçoit son e-mail, on sait que toute la chaîne — de Prometheus à Alertmanager jusqu'à la boîte de réception — fonctionne.
 
 ![Règles d'alerte](docs/screenshots/06-regles-alerte.png)
+
+*Ci-dessus, les règles telles qu'elles apparaissent dans Grafana, organisées par groupe (`kubernetes_pods`, `penpot_application`, `rds_database`…). Le détail des trois champs de chaque règle se lit dans [`prometheus_alerts.yml`](penpot-infra/ansible/files/prometheus_alerts.yml).*
 
 ## Superviser ce sur quoi on ne peut rien installer
 
