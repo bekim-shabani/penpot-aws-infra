@@ -240,6 +240,34 @@ Le premier restaure **toute la base** à une minute près. Le second permet une 
 
 ---
 
+## 🗺️ Où regarder dans le code
+
+Chaque élément décrit plus haut correspond à un fichier précis.
+
+| Ce qui est décrit | Où c'est écrit |
+|---|---|
+| Déclaration des 9 stages et inclusion des pipelines | [`.gitlab-ci.yml`](.gitlab-ci.yml) |
+| État distant verrouillé, providers | [`terraform/main.tf`](penpot-infra/terraform/main.tf) |
+| Secrets générés et injectés dans Kubernetes | [`terraform/secrets.tf`](penpot-infra/terraform/secrets.tf) |
+| VPC, sous-réseaux, tables de routage, fck-nat | [`vpc.tf`](penpot-infra/terraform/vpc.tf) · [`routage.tf`](penpot-infra/terraform/routage.tf) |
+| Filtrage réseau (*deny* par défaut) | [`security_groups.tf`](penpot-infra/terraform/security_groups.tf) |
+| IRSA : fournisseur OIDC, rôles ALB et EBS CSI | [`iam.tf`](penpot-infra/terraform/iam.tf) |
+| ALB, certificat ACM, Ingress | [`alb.tf`](penpot-infra/terraform/alb.tf) · [`ingress.tf`](penpot-infra/terraform/ingress.tf) |
+| Durcissement du bastion, validation `sshd -t` | [`playbooks/bastion.yml`](penpot-infra/ansible/playbooks/bastion.yml) |
+| Inventaire dynamique et rebond ProxyJump | [`inventory.ini.tpl`](penpot-infra/ansible/inventory.ini.tpl) · [`ci/ansible.yml`](penpot-infra/ci/ansible.yml) |
+| Scraping : 15 s, 9 cibles, rétention 30 j | [`host_vars/prometheus.yml`](penpot-infra/ansible/host_vars/prometheus.yml) |
+| Les 40 règles d'alerte et le Watchdog | [`files/prometheus_alerts.yml`](penpot-infra/ansible/files/prometheus_alerts.yml) |
+| CloudWatch Exporter et sa politique IAM | [`deploy-cloudwatch-exporter.yml`](penpot-infra/ansible/playbooks/deploy-cloudwatch-exporter.yml) · [politique](penpot-infra/ansible/files/cloudwatch-exporter-iam-policy.json) |
+| Sauvegarde `pg_dump` → S3, rotation 7 j | [`files/backup.sh`](penpot-infra/ansible/files/backup.sh) · [`s3.tf`](penpot-infra/terraform/s3.tf) |
+| **Cache par empreinte SHA-256** | [`ci/compile.yml`](penpot-infra/ci/compile.yml) |
+| Construction et publication des 5 images | [`ci/build.yml`](penpot-infra/ci/build.yml) |
+| SonarCloud, Vitest, Cypress | [`ci/test.yml`](penpot-infra/ci/test.yml) · [`ci/test-e2e.yml`](penpot-infra/ci/test-e2e.yml) |
+| **Déploiement piloté par le tag** (`set image`, `rollout`) | [`ci/deploy.yml`](penpot-infra/ci/deploy.yml) |
+| Plan Terraform enregistré en artefact | [`ci/terraform.yml`](penpot-infra/ci/terraform.yml) |
+| `RollingUpdate` de `app-core`, volume EBS | [`k8s/prod/`](penpot-infra/k8s/prod/) |
+
+---
+
 ## ✅ Résultat
 
 Penpot déployé en production, servi en **HTTPS**, de bout en bout par la chaîne CI/CD sur une infrastructure entièrement décrite en code.
