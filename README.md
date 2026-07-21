@@ -84,7 +84,7 @@ Deux garde-fous :
 - **L'état est distant et verrouillé.** Le `tfstate` est stocké sur le backend HTTP de GitLab, et un **verrou** empêche deux `apply` de s'exécuter simultanément — donc pas de dérive ni d'état corrompu.
 - **Les secrets sont générés, jamais écrits.** `random_password` produit le mot de passe PostgreSQL et la clé applicative, que Terraform injecte ensuite directement dans des secrets Kubernetes. Aucun identifiant en clair dans le code.
 
-## Le réseau — ce qui sort, ce qui n'entre pas
+## Le réseau — VPC, sous-réseaux et routage
 
 Le VPC est découpé en **4 sous-réseaux sur 2 zones** :
 
@@ -192,7 +192,7 @@ Ensuite, 8 jobs Ansible s'enchaînent par `needs` — avec le **pare-feu UFW app
 
 # 3️⃣ Superviser
 
-## Une supervision qui survit au cluster
+## Superviser depuis l'extérieur du cluster
 
 Prometheus, Grafana et Alertmanager tournent sur des **EC2, en dehors du cluster**. Si le cluster tombe — précisément le moment où l'alerte compte — la supervision reste debout et notifie.
 
