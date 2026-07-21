@@ -96,7 +96,7 @@ variable "security_group_name_ec2" {
 }
 
 variable "ssh_allowed_ec2_cidr" {
-  description = "CIDR block allowed tno SSH into the instace"
+  description = "CIDR autorisé en SSH sur les instances privées — restreint au sous-réseau public, donc au bastion"
   type        = string
   default     = "10.0.1.0/24"
 }

@@ -1,0 +1,21 @@
+stages:
+  - compile
+  - test
+  - build
+  - deploy
+  - integration
+  - plan
+  - apply
+  - provisioning
+  - destroy
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  REGISTRY: registry.gitlab.com/penpotproject/penpot
+  AWS_DEFAULT_REGION: "eu-north-1"
+  TF_ROOT: "penpot-infra/terraform"
+  EKS_CLUSTER_NAME: "penpotproject"
+
+include:
+  - local: penpot-infra/ci/*.yml

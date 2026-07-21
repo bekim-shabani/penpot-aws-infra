@@ -214,7 +214,7 @@ resource "aws_vpc_security_group_ingress_rule" "prometheus_scrape_node_exporter"
   to_port     = 9100
   ip_protocol = "tcp"
 
-  description = "autorise prometheus a scrap sur le pour 9100"
+  description = "Autorise Prometheus à scraper Node Exporter sur le port 9100"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "prometheus_scrape_penpot_metrics" {
@@ -225,7 +225,7 @@ resource "aws_vpc_security_group_ingress_rule" "prometheus_scrape_penpot_metrics
   to_port     = 6060
   ip_protocol = "tcp"
 
-  description = "Autoruse prometheus a scrap les pods sur le 6000"
+  description = "Autorise Prometheus à scraper les pods Penpot sur le port 6060"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "prometheus_scrape_kube_state_metrics" {

@@ -58,12 +58,13 @@ Héberger Penpot en autonomie, sur une infrastructure maîtrisée, avec :
 ## 📁 Structure
 
 ```
+.gitlab-ci.yml       point d'entrée : déclare les 9 stages et inclut ci/*.yml
 penpot-infra/
-├── terraform/   21 fichiers .tf — « un domaine, un fichier »
-├── ansible/     8 playbooks idempotents + inventaire dynamique
-├── ci/          pipelines GitLab (applicatif + infrastructure)
-├── k8s/         manifestes Kubernetes (prod / preprod)
-└── tests/       Cypress (end-to-end)
+├── terraform/       21 fichiers .tf — « un domaine, un fichier »
+├── ansible/         8 playbooks idempotents + inventaire dynamique
+├── ci/              pipelines GitLab (applicatif + infrastructure)
+├── k8s/             manifestes Kubernetes (prod / preprod)
+└── tests/           Cypress (end-to-end)
 ```
 
 > Ce dépôt est l'extrait **`penpot-infra/`** d'un monorepo qui contenait aussi le code applicatif de Penpot (récupéré en amont, non modifié). C'est pourquoi les chemins des fichiers CI référencent `penpot-infra/`.
@@ -213,7 +214,7 @@ RDS, ElastiCache et l'ALB sont **managés** : aucun accès à l'OS, donc impossi
 
 La démarche a consisté à établir que leurs métriques existent nativement dans **CloudWatch**, puis à distinguer deux familles d'exporters : ceux de type **agent** (installés sur l'hôte — inapplicables ici) et ceux de type **passerelle**, qui interrogent une API distante.
 
-La solution : le **CloudWatch Exporter**, déployé sur l'instance Prometheus. Il interroge l'**API CloudWatch** avec un rôle IAM en lecture seule et réexpose les métriques comme une cible de scraping classique.
+La solution : le **CloudWatch Exporter**, déployé sur l'instance Prometheus. Il interroge l'**API CloudWatch** avec un rôle IAM **en lecture seule** — quatre actions et rien d'autre : `GetMetricStatistics`, `ListMetrics`, `GetMetricData`, `tag:GetResources` ([la politique](penpot-infra/ansible/files/cloudwatch-exporter-iam-policy.json)) — et réexpose les métriques comme une cible de scraping classique.
 
 > L'enseignement : distinguer une métrique accessible **par agent** d'une métrique accessible **uniquement par API**.
 
