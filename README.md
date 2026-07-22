@@ -20,8 +20,6 @@ Projet mené **à trois**. Ce dépôt rassemble le travail de l'équipe, publié
 | **Walid** | Conteneurisation Docker, cluster EKS |
 | **Bekim Keqolli** | Pipelines CI/CD, tests, intégration |
 
-Ma contribution a porté sur la **chaîne CI/CD applicative** (les 5 stages, le cache par empreinte SHA-256, le déclenchement par tag), les **tests** (SonarCloud, Vitest, Cypress) et l'**intégration** des briques entre elles.
-
 ---
 
 ## 🎯 Le besoin
